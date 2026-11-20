@@ -380,7 +380,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {albumsExpanded && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {albums.map((album) => {
+              {albums.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={onOpenNewAlbumModal}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 10px',
+                    borderRadius: 7,
+                    fontSize: 12.5,
+                    color: 'var(--accent)',
+                    border: '1px dashed var(--border-color)',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    width: '100%',
+                    justifyContent: 'center',
+                    margin: '4px 0',
+                    fontWeight: 500,
+                  }}
+                  title="Create your first collection"
+                >
+                  <Plus size={13} color="var(--accent)" />
+                  <span>Create Collection</span>
+                </button>
+              ) : (
+                albums.map((album) => {
                 const isActive = filterState.selectedAlbumId === album.id;
                 const isHovered = hoveredAlbumId === album.id;
 
@@ -504,7 +530,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
                 );
-              })}
+              })
+            )}
             </div>
           )}
         </div>

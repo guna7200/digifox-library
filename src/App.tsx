@@ -10,7 +10,6 @@ import { NewAlbumModal } from './components/albums/NewAlbumModal';
 import { EditAlbumModal } from './components/albums/EditAlbumModal';
 import { LoginView } from './components/auth/LoginView';
 import { LoadingScreen } from './components/common/LoadingScreen';
-import { INITIAL_MEDIA, INITIAL_ALBUMS } from './data/mockMedia';
 import type { MediaItem, Album, FilterState } from './types/media';
 import {
   getAllMediaFromDB,
@@ -19,28 +18,33 @@ import {
 } from './utils/db';
 import { CheckCircle2 } from 'lucide-react';
 
-const DigiFoxApp: React.FC = () => {
-  // Main Library Data States
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>(() => {
-    const demosCleared = localStorage.getItem('digifox_cleared_demos') === 'true';
-    return demosCleared ? [] : INITIAL_MEDIA;
-  });
+const DEMO_ALBUM_IDS = new Set([
+  'nordic-expedition',
+  'urban-architecture',
+  'studio-archive',
+  'cinematic-reels',
+]);
 
-  // Persistent Albums / Collections
+const DigiFoxApp: React.FC = () => {
+  // Main Library Data States - Starts completely clean, only user uploads
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+
+  // Persistent Albums / Collections - Only user-created collections
   const [albums, setAlbums] = useState<Album[]>(() => {
     try {
       const saved = localStorage.getItem('digifox_saved_albums');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
+        }
       }
     } catch (e) {
       console.error(e);
     }
-    return INITIAL_ALBUMS;
+    return [];
   });
 
-  const [onlyMyUploads, setOnlyMyUploads] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Initial loading & IndexedDB hydration
@@ -49,19 +53,29 @@ const DigiFoxApp: React.FC = () => {
   useEffect(() => {
     async function loadStoredUploads() {
       try {
+        localStorage.setItem('digifox_cleared_demos', 'true');
+
+        // Clean demo albums from storage if present
+        const saved = localStorage.getItem('digifox_saved_albums');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              const cleaned = parsed.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
+              localStorage.setItem('digifox_saved_albums', JSON.stringify(cleaned));
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         const storedItems = await getAllMediaFromDB();
         if (storedItems && storedItems.length > 0) {
-          const demosCleared = localStorage.getItem('digifox_cleared_demos') === 'true';
-          setMediaItems((prev) => {
-            const base = demosCleared ? [] : prev.filter((i) => !i.isCustomUpload);
-            // Merge stored custom uploads
-            const merged = [...storedItems, ...base];
-            // Deduplicate by ID
-            const unique = Array.from(new Map(merged.map((m) => [m.id, m])).values());
-            return unique;
-          });
-          // If the user has uploads, default to showing them
-          setOnlyMyUploads(true);
+          // Filter out any mock/demo items if present in indexedDB
+          const userItems = storedItems.filter((i) => !i.id.startsWith('df-'));
+          setMediaItems(userItems);
+        } else {
+          setMediaItems([]);
         }
       } catch (err) {
         console.error('Failed to load uploads from DB:', err);
@@ -114,27 +128,17 @@ const DigiFoxApp: React.FC = () => {
     }));
   }, [albums, mediaItems]);
 
-  // Check if sample media exists in current library
-  const hasSampleMedia = useMemo(() => {
-    return mediaItems.some((i) => !i.isCustomUpload);
-  }, [mediaItems]);
-
   // Filter & Sort Calculations
   const filteredAndSortedMedia = useMemo(() => {
     return mediaItems
       .filter((item) => {
-        // If user wants to see only their uploads
-        if (onlyMyUploads && !item.isCustomUpload) {
-          return false;
-        }
-
         // Search query filter
         if (filterState.searchQuery.trim()) {
           const q = filterState.searchQuery.toLowerCase();
           const matchTitle = item.title.toLowerCase().includes(q);
-          const matchTags = item.tags.some((t) => t.toLowerCase().includes(q));
-          const matchCamera = item.exif.camera.toLowerCase().includes(q);
-          const matchLocation = item.exif.location?.toLowerCase().includes(q);
+          const matchTags = item.tags?.some((t) => t.toLowerCase().includes(q));
+          const matchCamera = item.exif?.camera?.toLowerCase().includes(q);
+          const matchLocation = item.exif?.location?.toLowerCase().includes(q);
           if (!matchTitle && !matchTags && !matchCamera && !matchLocation) {
             return false;
           }
@@ -159,7 +163,7 @@ const DigiFoxApp: React.FC = () => {
         }
 
         // Tag filter
-        if (filterState.selectedTag && !item.tags.includes(filterState.selectedTag)) {
+        if (filterState.selectedTag && !item.tags?.includes(filterState.selectedTag)) {
           return false;
         }
 
@@ -181,21 +185,18 @@ const DigiFoxApp: React.FC = () => {
             return factor * (new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime());
         }
       });
-  }, [mediaItems, filterState, onlyMyUploads]);
+  }, [mediaItems, filterState]);
 
   // Media counts for sidebar indicators
   const mediaCounts = useMemo(() => {
-    const activePool = onlyMyUploads
-      ? mediaItems.filter((i) => i.isCustomUpload)
-      : mediaItems;
     return {
-      all: activePool.length,
-      photos: activePool.filter((i) => i.type === 'photo').length,
-      videos: activePool.filter((i) => i.type === 'video').length,
-      drone: activePool.filter((i) => i.type === 'drone').length,
-      favorites: activePool.filter((i) => i.isFavorite).length,
+      all: mediaItems.length,
+      photos: mediaItems.filter((i) => i.type === 'photo').length,
+      videos: mediaItems.filter((i) => i.type === 'video').length,
+      drone: mediaItems.filter((i) => i.type === 'drone').length,
+      favorites: mediaItems.filter((i) => i.isFavorite).length,
     };
-  }, [mediaItems, onlyMyUploads]);
+  }, [mediaItems]);
 
   // Favorite toggle handler
   const handleToggleFavorite = (id: string, e: React.MouseEvent) => {
@@ -239,16 +240,7 @@ const DigiFoxApp: React.FC = () => {
       console.error('Failed to persist items:', e);
     }
 
-    setOnlyMyUploads(true);
     setToastMessage(`Successfully uploaded ${newItems.length} file(s) to your DigiFox Library!`);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  // Clear demo photos so only user's uploads are kept
-  const handleClearSampleMedia = () => {
-    setMediaItems((prev) => prev.filter((i) => i.isCustomUpload));
-    localStorage.setItem('digifox_cleared_demos', 'true');
-    setToastMessage('Removed sample photos. Library now shows only your uploads.');
     setTimeout(() => setToastMessage(null), 3500);
   };
 
@@ -392,10 +384,6 @@ const DigiFoxApp: React.FC = () => {
           onDeleteItems={handleDeleteItems}
           onBatchFavorite={handleBatchFavorite}
           onOpenUpload={() => setIsUploadOpen(true)}
-          hasSampleMedia={hasSampleMedia}
-          onlyMyUploads={onlyMyUploads}
-          onToggleOnlyMyUploads={() => setOnlyMyUploads((prev) => !prev)}
-          onClearSampleMedia={handleClearSampleMedia}
           onEditAlbum={(album) => setEditingAlbum(album)}
           onDeleteAlbum={(albumId) => handleDeleteAlbum(albumId)}
           onAssignMediaToAlbum={handleAssignMediaToAlbum}

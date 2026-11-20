@@ -33,6 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
   onOpenSettings,
   onOpenAuthModal,
+  totalMediaCount = 0,
 }) => {
   const { resolvedTheme, toggleTheme } = useTheme();
 
@@ -618,13 +619,13 @@ export const Header: React.FC<HeaderProps> = ({
                 background: 'linear-gradient(135deg, var(--accent) 0%, #3B82F6 100%)',
                 color: '#FFFFFF',
                 fontWeight: 600,
-                fontSize: 13,
+                fontSize: 12,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              AR
+              GP
             </div>
             <span
               style={{
@@ -633,7 +634,7 @@ export const Header: React.FC<HeaderProps> = ({
                 color: 'var(--text-primary)',
               }}
             >
-              Alex
+              Guna
             </span>
             <ChevronDown size={13} color="var(--text-tertiary)" />
           </button>
@@ -661,13 +662,13 @@ export const Header: React.FC<HeaderProps> = ({
                     color: 'var(--text-primary)',
                   }}
                 >
-                  Alex Reed
+                  Gunaseelan P
                 </div>
                 <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                  curator@digifox.library
+                  gunaseelan.p@digifox.studio
                 </div>
 
-                {/* Storage gauge */}
+                {/* Storage / Media Info */}
                 <div style={{ marginTop: 12 }}>
                   <div
                     style={{
@@ -678,8 +679,8 @@ export const Header: React.FC<HeaderProps> = ({
                       marginBottom: 4,
                     }}
                   >
-                    <span>Vault Storage</span>
-                    <span style={{ fontWeight: 600 }}>48.2 / 256 GB</span>
+                    <span>Vault Media</span>
+                    <span style={{ fontWeight: 600 }}>{totalMediaCount} files</span>
                   </div>
                   <div
                     style={{
@@ -693,7 +694,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <div
                       style={{
                         height: '100%',
-                        width: '18.8%',
+                        width: totalMediaCount > 0 ? '100%' : '0%',
                         background: 'var(--accent)',
                         borderRadius: 4,
                       }}

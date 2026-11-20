@@ -28,10 +28,6 @@ interface GalleryViewProps {
   onDeleteItems: (ids: string[]) => void;
   onBatchFavorite: (ids: string[]) => void;
   onOpenUpload: () => void;
-  hasSampleMedia: boolean;
-  onlyMyUploads: boolean;
-  onToggleOnlyMyUploads: () => void;
-  onClearSampleMedia: () => void;
   onEditAlbum?: (album: Album) => void;
   onDeleteAlbum?: (albumId: string) => void;
   onAssignMediaToAlbum?: (mediaIds: string[], albumId: string | null) => void;
@@ -46,10 +42,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
   onDeleteItems,
   onBatchFavorite,
   onOpenUpload,
-  hasSampleMedia,
-  onlyMyUploads,
-  onToggleOnlyMyUploads,
-  onClearSampleMedia,
   onEditAlbum,
   onDeleteAlbum,
   onAssignMediaToAlbum,
@@ -286,53 +278,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
 
         {/* Actions & View Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* My Uploads Filter Pill */}
-          <button
-            onClick={onToggleOnlyMyUploads}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              borderRadius: 8,
-              fontSize: 12.5,
-              fontWeight: 500,
-              backgroundColor: onlyMyUploads ? 'var(--accent)' : 'var(--bg-surface)',
-              color: onlyMyUploads ? '#FFFFFF' : 'var(--text-primary)',
-              border: `1px solid ${onlyMyUploads ? 'var(--accent)' : 'var(--border-color)'}`,
-              cursor: 'pointer',
-              transition: 'all 150ms ease',
-            }}
-            title="Filter to show only images you uploaded"
-          >
-            <span>{onlyMyUploads ? '✓ Showing My Uploads Only' : 'Show Only My Uploads'}</span>
-          </button>
-
-          {/* Remove Demo Images Button */}
-          {hasSampleMedia && (
-            <button
-              onClick={onClearSampleMedia}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                borderRadius: 8,
-                fontSize: 12.5,
-                fontWeight: 500,
-                backgroundColor: 'var(--bg-surface)',
-                color: 'var(--color-error)',
-                border: '1px solid var(--border-color)',
-                cursor: 'pointer',
-                transition: 'all 150ms ease',
-              }}
-              title="Remove sample/demo photos so only your uploaded images remain"
-            >
-              <Trash2 size={13} />
-              <span>Clear Demo Photos</span>
-            </button>
-          )}
-
           {/* View density switches */}
           <div
             style={{
@@ -439,7 +384,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
               marginBottom: 8,
             }}
           >
-            No media found in DigiFox Library
+            Your DigiFox Library is Empty
           </h3>
           <p
             style={{
@@ -450,8 +395,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
             }}
           >
             {filterState.searchQuery || filterState.mediaType !== 'all' || filterState.favoritesOnly
-              ? 'Try resetting your active filters or searching with a different term.'
-              : 'Upload your high-resolution photos, 4K videos, or RAW captures to build your centralized library.'}
+              ? 'No media found matching your active filters.'
+              : 'Upload photos, videos, or drone footage to start building your library.'}
           </p>
           <button onClick={onOpenUpload} className="btn-primary">
             <Upload size={15} />
