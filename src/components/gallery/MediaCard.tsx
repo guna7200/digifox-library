@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Heart, Play, Check, Maximize2, Drone } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Heart, Play, Check, Maximize2, Drone, Image as ImageIcon } from 'lucide-react';
 import type { MediaItem } from '../../types/media';
+import { convertHeicToJpegUrl } from '../../utils/heic';
 
 interface MediaCardProps {
   item: MediaItem;
@@ -20,6 +21,24 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   density,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [displaySrc, setDisplaySrc] = useState(item.thumbnail);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setDisplaySrc(item.thumbnail);
+    setHasError(false);
+
+    convertHeicToJpegUrl(item.thumbnail).then((resolved) => {
+      if (active && resolved !== item.thumbnail) {
+        setDisplaySrc(resolved);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [item.thumbnail]);
 
   // Height based on density
   const cardHeights = {
@@ -59,21 +78,42 @@ export const MediaCard: React.FC<MediaCardProps> = ({
           overflow: 'hidden',
         }}
       >
-        <img
-          src={item.thumbnail}
-          alt={item.title}
-          loading="lazy"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-            // CRITICAL: Photos themselves remain untouched by theme filters
-            filter: 'none',
-            transform: isHovered ? 'scale(1.025)' : 'scale(1.0)',
-            transition: 'transform 240ms cubic-bezier(0.2, 0, 0.2, 1)',
-          }}
-        />
+        {!hasError ? (
+          <img
+            src={displaySrc}
+            alt={item.title}
+            loading="lazy"
+            onError={() => setHasError(true)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+              filter: 'none',
+              transform: isHovered ? 'scale(1.025)' : 'scale(1.0)',
+              transition: 'transform 240ms cubic-bezier(0.2, 0, 0.2, 1)',
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.04)',
+              color: 'var(--text-tertiary)',
+              gap: 8,
+              padding: 12,
+              textAlign: 'center',
+            }}
+          >
+            <ImageIcon size={28} />
+            <span style={{ fontSize: 11, opacity: 0.8 }}>Image Unavailable</span>
+          </div>
+        )}
 
         {/* Hover / Selection Overlay gradient for readability */}
         <div

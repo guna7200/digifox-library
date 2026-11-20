@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { MediaItem } from '../../types/media';
 import { downloadSingleMediaItem } from '../../utils/download';
+import { convertHeicToJpegUrl } from '../../utils/heic';
 
 interface MediaLightboxProps {
   item: MediaItem;
@@ -37,6 +38,20 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
   const [rotation, setRotation] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [resolvedUrl, setResolvedUrl] = useState(item.url);
+
+  useEffect(() => {
+    let active = true;
+    setResolvedUrl(item.url);
+    convertHeicToJpegUrl(item.url).then((res) => {
+      if (active && res !== item.url) {
+        setResolvedUrl(res);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [item.url]);
 
   const handleDownload = async () => {
     if (isDownloading) return;
@@ -295,7 +310,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
             />
           ) : (
             <img
-              src={item.url}
+              src={resolvedUrl}
               alt={item.title}
               style={{
                 maxWidth: '100%',
