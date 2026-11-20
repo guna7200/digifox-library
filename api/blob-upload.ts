@@ -22,29 +22,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body,
       request: req,
       token: process.env.BLOB_READ_WRITE_TOKEN,
-      onBeforeGenerateToken: async (pathname) => {
+      onBeforeGenerateToken: async () => {
         return {
-          allowedContentTypes: [
-            // Images
-            'image/jpeg',
-            'image/png',
-            'image/webp',
-            'image/gif',
-            'image/svg+xml',
-            'image/avif',
-            'image/heic',
-            'image/heif',
-            'image/tiff',
-            'image/x-adobe-dng',
-            // Videos
-            'video/mp4',
-            'video/quicktime',
-            'video/webm',
-            'video/x-matroska',
-            'video/avi',
-            // Binary / raw / drone stream formats (.insv, raw)
-            'application/octet-stream',
-          ],
           maximumSizeInBytes: 500 * 1024 * 1024, // 500MB max per file
         };
       },

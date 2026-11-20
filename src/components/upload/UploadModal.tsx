@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { upload } from '@vercel/blob/client';
+import heic2any from 'heic2any';
+import { saveMediaToCloud } from '../../utils/api';
 import {
   X,
   UploadCloud,
@@ -260,10 +262,32 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     });
   };
 
-  // Process image file from device
-  const processImageFile = (file: File): Promise<StagedItem> => {
+  // Process image file from device with automatic HEIC-to-JPEG conversion
+  const processImageFile = async (file: File): Promise<StagedItem> => {
+    let workingFile = file;
+    const isHeic = /\.(heic|heif)$/i.test(file.name) || file.type.includes('heic') || file.type.includes('heif');
+
+    if (isHeic) {
+      try {
+        setStatusMessage(`Converting HEIC (${file.name}) to high-quality JPEG...`);
+        const converted = await heic2any({
+          blob: file,
+          toType: 'image/jpeg',
+          quality: 0.9,
+        });
+        const blob = Array.isArray(converted) ? converted[0] : converted;
+        workingFile = new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), {
+          type: 'image/jpeg',
+          lastModified: file.lastModified,
+        });
+      } catch (convErr) {
+        console.warn('HEIC conversion fallback:', convErr);
+      }
+    }
+
+    const isRaw = workingFile.name.match(/\.(dng|arw|cr3|cr2|nef|raw|raf|rw2)$/i);
+
     return new Promise((resolve) => {
-      const isRaw = file.name.match(/\.(dng|arw|cr3|cr2|nef|raw|raf|rw2)$/i);
       const reader = new FileReader();
 
       reader.onload = (e) => {
@@ -299,30 +323,30 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
           resolve({
             id: `upload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            file,
-            title: file.name.replace(/\.[^/.]+$/, ''),
+            file: workingFile,
+            title: workingFile.name.replace(/\.[^/.]+$/, ''),
             type: isRaw ? 'raw' : 'photo',
             previewUrl: optimizedUrl,
             streamUrl: optimizedUrl,
             width: img.naturalWidth || 4000,
             height: img.naturalHeight || 3000,
-            fileSize: formatFileSize(file.size),
-            fileSizeBytes: file.size,
+            fileSize: formatFileSize(workingFile.size),
+            fileSizeBytes: workingFile.size,
           });
         };
 
         img.onerror = () => {
           resolve({
             id: `upload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            file,
-            title: file.name.replace(/\.[^/.]+$/, ''),
+            file: workingFile,
+            title: workingFile.name.replace(/\.[^/.]+$/, ''),
             type: isRaw ? 'raw' : 'photo',
             previewUrl: dataUrl,
             streamUrl: dataUrl,
             width: 4000,
             height: 3000,
-            fileSize: formatFileSize(file.size),
-            fileSizeBytes: file.size,
+            fileSize: formatFileSize(workingFile.size),
+            fileSizeBytes: workingFile.size,
           });
         };
 
@@ -330,22 +354,22 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       };
 
       reader.onerror = () => {
-        const objectUrl = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(workingFile);
         resolve({
           id: `upload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          file,
-          title: file.name.replace(/\.[^/.]+$/, ''),
+          file: workingFile,
+          title: workingFile.name.replace(/\.[^/.]+$/, ''),
           type: isRaw ? 'raw' : 'photo',
           previewUrl: objectUrl,
           streamUrl: objectUrl,
           width: 4000,
           height: 3000,
-          fileSize: formatFileSize(file.size),
-          fileSizeBytes: file.size,
+          fileSize: formatFileSize(workingFile.size),
+          fileSizeBytes: workingFile.size,
         });
       };
 
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(workingFile);
     });
   };
 
@@ -358,10 +382,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isDrone = /\.insv$/i.test(file.name) || /drone/i.test(file.name);
+      const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|m4v|3gp|flv|wmv)$/i.test(file.name);
+
       if (isDrone) {
         const item = await processDroneVideoFile(file);
         newItems.push(item);
-      } else if (file.type.startsWith('video/')) {
+      } else if (isVideo) {
         const item = await processVideoFile(file);
         newItems.push(item);
       } else {
@@ -447,7 +473,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         const ext = staged.file.name.split('.').pop()?.toUpperCase() || 'JPEG';
         const isDrone = staged.type === 'drone';
 
-        newMediaItems.push({
+        const item: MediaItem = {
           id: staged.id,
           title: staged.title,
           type: staged.type,
@@ -479,8 +505,17 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             colorSpace: 'sRGB / Rec.709',
             bitDepth: isDrone ? '10-bit INSV Stream' : staged.type === 'video' ? '10-bit Video' : '8-bit RGB',
           },
-        });
+        };
 
+        // Immediately persist this item to Neon Cloud DB
+        setStatusMessage(`Storing ${staged.title} to database (${i + 1}/${totalFiles})...`);
+        try {
+          await saveMediaToCloud([item]);
+        } catch (dbErr) {
+          console.error('Failed to store item in database:', dbErr);
+        }
+
+        newMediaItems.push(item);
         setUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
       }
 

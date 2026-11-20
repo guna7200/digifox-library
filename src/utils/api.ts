@@ -29,17 +29,28 @@ export async function fetchAllMedia(): Promise<MediaItem[]> {
 }
 
 export async function saveMediaToCloud(items: MediaItem[]): Promise<void> {
+  if (!items || items.length === 0) return;
+
   // Always save locally first for instant response
   await saveMediaItemsToDB(items);
 
-  try {
-    await fetch(`${API_BASE}/api/media`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(items),
-    });
-  } catch (err) {
-    console.warn('Failed to sync media to Neon Cloud DB:', err);
+  // Send in safe chunks of 5 to guarantee no Vercel payload/timeout limits
+  const CHUNK_SIZE = 5;
+  for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+    const chunk = items.slice(i, i + CHUNK_SIZE);
+    try {
+      const res = await fetch(`${API_BASE}/api/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chunk),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`Failed to sync media to Neon Cloud DB (${res.status}):`, errText);
+      }
+    } catch (err) {
+      console.warn('Failed to sync media chunk to Neon Cloud DB:', err);
+    }
   }
 }
 

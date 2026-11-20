@@ -12,6 +12,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",
     "@vercel/blob": "^2.9.0",
+    "heic2any": "^0.0.4",
     "lucide-react": "^1.76.0",
     "pg": "^8.23.1",
     "react": "^19.3.1",
