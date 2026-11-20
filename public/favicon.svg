@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#18191C"/>
+  <!-- Geometric DigiFox Face Mark -->
+  <path d="M7 8L12 18H20L25 8L21 21L16 26L11 21L7 8Z" fill="url(#foxGradient)"/>
+  <path d="M12 18L16 23L20 18H12Z" fill="#FFFFFF" fill-opacity="0.9"/>
+  <defs>
+    <linearGradient id="foxGradient" x1="7" y1="8" x2="25" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B9EFF"/>
+      <stop offset="1" stop-color="#526DFF"/>
+    </linearGradient>
+  </defs>
+</svg>
