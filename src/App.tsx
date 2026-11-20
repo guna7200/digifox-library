@@ -54,7 +54,7 @@ const DigiFoxApp: React.FC = () => {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Initial loading & Cloud DB / IndexedDB hydration
+  // Initial loading & Dual Local + Cloud DB hydration
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -62,33 +62,85 @@ const DigiFoxApp: React.FC = () => {
       try {
         localStorage.setItem('digifox_cleared_demos', 'true');
 
-        // 1. Fetch Cloud Albums from Neon PostgreSQL
+        // 1. Fetch Local Albums from localStorage
+        let localAlbums: Album[] = [];
+        const saved = localStorage.getItem('digifox_saved_albums');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              localAlbums = parsed.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
+            }
+          } catch {}
+        }
+
+        // Fetch Cloud Albums from Neon PostgreSQL
+        let cloudAlbums: Album[] = [];
         try {
-          const cloudAlbums = await fetchAlbumsFromCloud();
-          if (cloudAlbums && cloudAlbums.length > 0) {
-            const cleaned = cloudAlbums.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
-            setAlbums(cleaned);
-          }
+          cloudAlbums = await fetchAlbumsFromCloud();
         } catch (e) {
           console.warn('Could not fetch cloud albums:', e);
         }
 
-        // 2. Fetch Cloud Media from Neon PostgreSQL
-        const cloudMedia = await fetchAllMedia();
-        if (cloudMedia && cloudMedia.length > 0) {
-          const userItems = cloudMedia.filter((i) => !i.id.startsWith('df-'));
-          setMediaItems(userItems);
-        } else {
-          // Fallback to local DB if cloud is empty or first time
-          const storedItems = await getAllMediaFromDB();
-          if (storedItems && storedItems.length > 0) {
-            const userItems = storedItems.filter((i) => !i.id.startsWith('df-'));
-            setMediaItems(userItems);
-            // Sync local items to Neon cloud DB
-            saveMediaToCloud(userItems).catch(() => {});
-          } else {
-            setMediaItems([]);
+        // Merge Albums (Cloud + Local)
+        const albumMap = new Map<string, Album>();
+        cloudAlbums.forEach((a) => {
+          if (!DEMO_ALBUM_IDS.has(a.id)) albumMap.set(a.id, a);
+        });
+        localAlbums.forEach((a) => {
+          if (!DEMO_ALBUM_IDS.has(a.id) && !albumMap.has(a.id)) {
+            albumMap.set(a.id, a);
           }
+        });
+        const combinedAlbums = Array.from(albumMap.values());
+        setAlbums(combinedAlbums);
+
+        // Auto-sync any local-only albums to cloud
+        const unsyncedAlbums = localAlbums.filter(
+          (la) => !cloudAlbums.some((ca) => ca.id === la.id)
+        );
+        for (const alb of unsyncedAlbums) {
+          saveAlbumToCloud(alb).catch(() => {});
+        }
+
+        // 2. Load Local Media from IndexedDB (instant offline / local cache)
+        let localMedia: MediaItem[] = [];
+        try {
+          const stored = await getAllMediaFromDB();
+          if (stored && stored.length > 0) {
+            localMedia = stored.filter((i) => !i.id.startsWith('df-'));
+          }
+        } catch (e) {
+          console.warn('Could not read local DB:', e);
+        }
+
+        // Load Cloud Media from Neon PostgreSQL
+        let cloudMedia: MediaItem[] = [];
+        try {
+          cloudMedia = await fetchAllMedia();
+        } catch (e) {
+          console.warn('Could not read cloud media:', e);
+        }
+
+        // Merge Media (Cloud + Local) — ensuring local uploads are never lost!
+        const mediaMap = new Map<string, MediaItem>();
+        cloudMedia.forEach((m) => {
+          if (!m.id.startsWith('df-')) mediaMap.set(m.id, m);
+        });
+        localMedia.forEach((m) => {
+          if (!m.id.startsWith('df-') && !mediaMap.has(m.id)) {
+            mediaMap.set(m.id, m);
+          }
+        });
+        const combinedMedia = Array.from(mediaMap.values());
+        setMediaItems(combinedMedia);
+
+        // Auto-sync any local-only items to cloud so they appear on all devices
+        const unsyncedMedia = localMedia.filter(
+          (lm) => !cloudMedia.some((cm) => cm.id === lm.id)
+        );
+        if (unsyncedMedia.length > 0) {
+          saveMediaToCloud(unsyncedMedia).catch(() => {});
         }
       } catch (err) {
         console.error('Failed to load uploads from DB:', err);

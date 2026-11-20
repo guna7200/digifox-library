@@ -61,6 +61,15 @@ export async function deleteMediaFromCloud(ids: string[]): Promise<void> {
 
 export async function toggleFavoriteInCloud(id: string, isFavorite: boolean): Promise<void> {
   try {
+    const items = await getAllMediaFromDB();
+    const item = items.find((i) => i.id === id);
+    if (item) {
+      item.isFavorite = isFavorite;
+      await saveMediaItemsToDB([item]);
+    }
+  } catch {}
+
+  try {
     await fetch(`${API_BASE}/api/media`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
