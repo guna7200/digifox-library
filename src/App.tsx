@@ -13,9 +13,16 @@ import { LoadingScreen } from './components/common/LoadingScreen';
 import type { MediaItem, Album, FilterState } from './types/media';
 import {
   getAllMediaFromDB,
-  saveMediaItemsToDB,
-  deleteMediaFromDB,
 } from './utils/db';
+import {
+  fetchAllMedia,
+  saveMediaToCloud,
+  deleteMediaFromCloud,
+  toggleFavoriteInCloud,
+  fetchAlbumsFromCloud,
+  saveAlbumToCloud,
+  deleteAlbumFromCloud,
+} from './utils/api';
 import { CheckCircle2 } from 'lucide-react';
 
 const DEMO_ALBUM_IDS = new Set([
@@ -47,7 +54,7 @@ const DigiFoxApp: React.FC = () => {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Initial loading & IndexedDB hydration
+  // Initial loading & Cloud DB / IndexedDB hydration
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -55,27 +62,33 @@ const DigiFoxApp: React.FC = () => {
       try {
         localStorage.setItem('digifox_cleared_demos', 'true');
 
-        // Clean demo albums from storage if present
-        const saved = localStorage.getItem('digifox_saved_albums');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-              const cleaned = parsed.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
-              localStorage.setItem('digifox_saved_albums', JSON.stringify(cleaned));
-            }
-          } catch {
-            // ignore
+        // 1. Fetch Cloud Albums from Neon PostgreSQL
+        try {
+          const cloudAlbums = await fetchAlbumsFromCloud();
+          if (cloudAlbums && cloudAlbums.length > 0) {
+            const cleaned = cloudAlbums.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
+            setAlbums(cleaned);
           }
+        } catch (e) {
+          console.warn('Could not fetch cloud albums:', e);
         }
 
-        const storedItems = await getAllMediaFromDB();
-        if (storedItems && storedItems.length > 0) {
-          // Filter out any mock/demo items if present in indexedDB
-          const userItems = storedItems.filter((i) => !i.id.startsWith('df-'));
+        // 2. Fetch Cloud Media from Neon PostgreSQL
+        const cloudMedia = await fetchAllMedia();
+        if (cloudMedia && cloudMedia.length > 0) {
+          const userItems = cloudMedia.filter((i) => !i.id.startsWith('df-'));
           setMediaItems(userItems);
         } else {
-          setMediaItems([]);
+          // Fallback to local DB if cloud is empty or first time
+          const storedItems = await getAllMediaFromDB();
+          if (storedItems && storedItems.length > 0) {
+            const userItems = storedItems.filter((i) => !i.id.startsWith('df-'));
+            setMediaItems(userItems);
+            // Sync local items to Neon cloud DB
+            saveMediaToCloud(userItems).catch(() => {});
+          } else {
+            setMediaItems([]);
+          }
         }
       } catch (err) {
         console.error('Failed to load uploads from DB:', err);
@@ -201,11 +214,17 @@ const DigiFoxApp: React.FC = () => {
   // Favorite toggle handler
   const handleToggleFavorite = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    let nextFav = false;
     setMediaItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, isFavorite: !item.isFavorite } : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          nextFav = !item.isFavorite;
+          return { ...item, isFavorite: nextFav };
+        }
+        return item;
+      })
     );
+    toggleFavoriteInCloud(id, nextFav);
   };
 
   // Batch operations
@@ -215,12 +234,15 @@ const DigiFoxApp: React.FC = () => {
         ids.includes(item.id) ? { ...item, isFavorite: true } : item
       )
     );
+    for (const id of ids) {
+      toggleFavoriteInCloud(id, true);
+    }
   };
 
   const handleDeleteItems = async (ids: string[]) => {
     setMediaItems((prev) => prev.filter((item) => !ids.includes(item.id)));
     try {
-      await deleteMediaFromDB(ids);
+      await deleteMediaFromCloud(ids);
     } catch (e) {
       console.error(e);
     }
@@ -235,36 +257,51 @@ const DigiFoxApp: React.FC = () => {
     });
 
     try {
-      await saveMediaItemsToDB(newItems);
+      await saveMediaToCloud(newItems);
     } catch (e) {
       console.error('Failed to persist items:', e);
     }
 
-    setToastMessage(`Successfully uploaded ${newItems.length} file(s) to your DigiFox Library!`);
+    setToastMessage(`Successfully uploaded ${newItems.length} file(s) to DigiFox Library!`);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
   // Album creation handler
-  const handleCreateAlbum = (newAlbum: Album) => {
+  const handleCreateAlbum = async (newAlbum: Album) => {
     const updated = [...albums, newAlbum];
     saveAlbums(updated);
+    try {
+      await saveAlbumToCloud(newAlbum);
+    } catch (e) {
+      console.error('Failed to sync new album to cloud:', e);
+    }
     setToastMessage(`Collection "${newAlbum.title}" created.`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
   // Album edit / rename handler
-  const handleSaveAlbum = (updatedAlbum: Album) => {
+  const handleSaveAlbum = async (updatedAlbum: Album) => {
     const updated = albums.map((a) => (a.id === updatedAlbum.id ? updatedAlbum : a));
     saveAlbums(updated);
+    try {
+      await saveAlbumToCloud(updatedAlbum);
+    } catch (e) {
+      console.error('Failed to sync updated album to cloud:', e);
+    }
     setToastMessage(`Collection "${updatedAlbum.title}" updated.`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
   // Album delete handler
-  const handleDeleteAlbum = (albumId: string) => {
+  const handleDeleteAlbum = async (albumId: string) => {
     const target = albums.find((a) => a.id === albumId);
     const updated = albums.filter((a) => a.id !== albumId);
     saveAlbums(updated);
+    try {
+      await deleteAlbumFromCloud(albumId);
+    } catch (e) {
+      console.error('Failed to delete album from cloud:', e);
+    }
 
     // Unlink media items from this album
     setMediaItems((prev) =>
@@ -286,7 +323,7 @@ const DigiFoxApp: React.FC = () => {
       const updated = prev.map((m) =>
         mediaIds.includes(m.id) ? { ...m, albumId: targetAlbumId || undefined } : m
       );
-      saveMediaItemsToDB(updated.filter((i) => mediaIds.includes(i.id)));
+      saveMediaToCloud(updated.filter((i) => mediaIds.includes(i.id)));
       return updated;
     });
 

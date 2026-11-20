@@ -186,7 +186,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
                 }}
               >
                 <Play size={10} fill="#FFFFFF" />
-                {item.videoDuration || '4K'}
+                {item.videoDuration || 'VIDEO'}
               </span>
             )}
 

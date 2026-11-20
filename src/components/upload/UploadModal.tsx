@@ -270,13 +270,39 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         const img = new window.Image();
 
         img.onload = () => {
+          let optimizedUrl = dataUrl;
+          try {
+            const MAX_DIM = 1600;
+            let w = img.naturalWidth || 1920;
+            let h = img.naturalHeight || 1080;
+            if (w > MAX_DIM || h > MAX_DIM || dataUrl.length > 800000) {
+              if (w > h) {
+                h = Math.round((h * MAX_DIM) / w);
+                w = MAX_DIM;
+              } else {
+                w = Math.round((w * MAX_DIM) / h);
+                h = MAX_DIM;
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, w, h);
+                optimizedUrl = canvas.toDataURL('image/jpeg', 0.85);
+              }
+            }
+          } catch {
+            optimizedUrl = dataUrl;
+          }
+
           resolve({
             id: `upload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             file,
             title: file.name.replace(/\.[^/.]+$/, ''),
             type: isRaw ? 'raw' : 'photo',
-            previewUrl: dataUrl,
-            streamUrl: dataUrl,
+            previewUrl: optimizedUrl,
+            streamUrl: optimizedUrl,
             width: img.naturalWidth || 4000,
             height: img.naturalHeight || 3000,
             fileSize: formatFileSize(file.size),

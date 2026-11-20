@@ -326,7 +326,7 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 Media Format
               </div>
-              {(['all', 'photo', 'video', 'raw'] as const).map((type) => (
+              {(['all', 'photo', 'video', 'drone'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => {
@@ -356,8 +356,8 @@ export const Header: React.FC<HeaderProps> = ({
                       : type === 'photo'
                       ? 'Photos'
                       : type === 'video'
-                      ? 'Videos (4K & HD)'
-                      : 'RAW Files'}
+                      ? 'Videos'
+                      : 'Drone Videos'}
                   </span>
                   {filterState.mediaType === type && <Check size={14} />}
                 </button>
