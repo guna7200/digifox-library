@@ -18,10 +18,12 @@ export async function convertHeicToJpegUrl(src: string): Promise<string> {
 
   try {
     const res = await fetch(src);
-    const blob = await res.blob();
+    const rawBlob = await res.blob();
+    // Explicitly set MIME type to image/heic so heic2any parser accepts it
+    const heicBlob = new Blob([rawBlob], { type: 'image/heic' });
 
     const converted = await heic2any({
-      blob,
+      blob: heicBlob,
       toType: 'image/jpeg',
       quality: 0.85,
     });

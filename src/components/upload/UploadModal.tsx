@@ -270,8 +270,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     if (isHeic) {
       try {
         setStatusMessage(`Converting HEIC (${file.name}) to high-quality JPEG...`);
+        // Force MIME type to image/heic so heic2any doesn't reject application/octet-stream
+        const heicBlob = new Blob([file], { type: 'image/heic' });
         const converted = await heic2any({
-          blob: file,
+          blob: heicBlob,
           toType: 'image/jpeg',
           quality: 0.9,
         });
