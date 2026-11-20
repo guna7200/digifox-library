@@ -4,6 +4,7 @@ import {
   getAllMediaFromDB,
   saveMediaItemsToDB,
   deleteMediaFromDB,
+  replaceMediaInDB,
 } from './db';
 
 const API_BASE = '';
@@ -14,10 +15,8 @@ export async function fetchAllMedia(): Promise<MediaItem[]> {
     if (res.ok) {
       const cloudItems: MediaItem[] = await res.json();
       if (Array.isArray(cloudItems)) {
-        // Cache to local IndexedDB in background
-        if (cloudItems.length > 0) {
-          saveMediaItemsToDB(cloudItems).catch(() => {});
-        }
+        // Keep local IndexedDB cache in exact sync with cloud
+        replaceMediaInDB(cloudItems).catch(() => {});
         return cloudItems;
       }
     }

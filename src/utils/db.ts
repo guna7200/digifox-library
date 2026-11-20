@@ -65,6 +65,18 @@ export async function deleteMediaFromDB(ids: string[]): Promise<void> {
   });
 }
 
+export async function replaceMediaInDB(items: MediaItem[]): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.clear();
+    items.forEach((item) => store.put(item));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
 export async function clearAllMediaFromDB(): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {

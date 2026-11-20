@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
@@ -54,103 +54,88 @@ const DigiFoxApp: React.FC = () => {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Initial loading & Dual Local + Cloud DB hydration
+  // Initial loading & Cloud DB synchronization
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadStoredUploads() {
-      try {
-        localStorage.setItem('digifox_cleared_demos', 'true');
+  // Synchronize data across all devices from Cloud Database (Single Source of Truth)
+  const syncData = useCallback(async (isInitial = false) => {
+    try {
+      localStorage.setItem('digifox_cleared_demos', 'true');
 
-        // 1. Fetch Local Albums from localStorage
-        let localAlbums: Album[] = [];
+      // 1. Fetch Cloud Albums from Neon PostgreSQL
+      let cloudAlbums: Album[] = [];
+      try {
+        cloudAlbums = await fetchAlbumsFromCloud();
+      } catch (e) {
+        console.warn('Could not fetch cloud albums:', e);
+      }
+
+      if (cloudAlbums && Array.isArray(cloudAlbums)) {
+        setAlbums(cloudAlbums.filter((a) => !DEMO_ALBUM_IDS.has(a.id)));
+      } else if (isInitial) {
         const saved = localStorage.getItem('digifox_saved_albums');
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed)) {
-              localAlbums = parsed.filter((a) => !DEMO_ALBUM_IDS.has(a.id));
+              setAlbums(parsed.filter((a) => !DEMO_ALBUM_IDS.has(a.id)));
             }
           } catch {}
         }
+      }
 
-        // Fetch Cloud Albums from Neon PostgreSQL
-        let cloudAlbums: Album[] = [];
+      // 2. Fetch Cloud Media from Neon PostgreSQL
+      let cloudMedia: MediaItem[] = [];
+      let cloudSuccess = false;
+      try {
+        cloudMedia = await fetchAllMedia();
+        cloudSuccess = true;
+      } catch (e) {
+        console.warn('Could not read cloud media:', e);
+      }
+
+      if (cloudSuccess && Array.isArray(cloudMedia)) {
+        // Neon Cloud DB is the Single Source of Truth
+        // Items deleted by another user will be removed from all clients
+        setMediaItems(cloudMedia.filter((m) => !m.id.startsWith('df-')));
+      } else if (isInitial) {
+        // Fallback to local cache only if offline on first boot
         try {
-          cloudAlbums = await fetchAlbumsFromCloud();
-        } catch (e) {
-          console.warn('Could not fetch cloud albums:', e);
-        }
-
-        // Merge Albums (Cloud + Local)
-        const albumMap = new Map<string, Album>();
-        cloudAlbums.forEach((a) => {
-          if (!DEMO_ALBUM_IDS.has(a.id)) albumMap.set(a.id, a);
-        });
-        localAlbums.forEach((a) => {
-          if (!DEMO_ALBUM_IDS.has(a.id) && !albumMap.has(a.id)) {
-            albumMap.set(a.id, a);
+          const local = await getAllMediaFromDB();
+          if (local && local.length > 0) {
+            setMediaItems(local.filter((m) => !m.id.startsWith('df-')));
           }
-        });
-        const combinedAlbums = Array.from(albumMap.values());
-        setAlbums(combinedAlbums);
-
-        // Auto-sync any local-only albums to cloud
-        const unsyncedAlbums = localAlbums.filter(
-          (la) => !cloudAlbums.some((ca) => ca.id === la.id)
-        );
-        for (const alb of unsyncedAlbums) {
-          saveAlbumToCloud(alb).catch(() => {});
-        }
-
-        // 2. Load Local Media from IndexedDB (instant offline / local cache)
-        let localMedia: MediaItem[] = [];
-        try {
-          const stored = await getAllMediaFromDB();
-          if (stored && stored.length > 0) {
-            localMedia = stored.filter((i) => !i.id.startsWith('df-'));
-          }
-        } catch (e) {
-          console.warn('Could not read local DB:', e);
-        }
-
-        // Load Cloud Media from Neon PostgreSQL
-        let cloudMedia: MediaItem[] = [];
-        try {
-          cloudMedia = await fetchAllMedia();
-        } catch (e) {
-          console.warn('Could not read cloud media:', e);
-        }
-
-        // Merge Media (Cloud + Local) — ensuring local uploads are never lost!
-        const mediaMap = new Map<string, MediaItem>();
-        cloudMedia.forEach((m) => {
-          if (!m.id.startsWith('df-')) mediaMap.set(m.id, m);
-        });
-        localMedia.forEach((m) => {
-          if (!m.id.startsWith('df-') && !mediaMap.has(m.id)) {
-            mediaMap.set(m.id, m);
-          }
-        });
-        const combinedMedia = Array.from(mediaMap.values());
-        setMediaItems(combinedMedia);
-
-        // Auto-sync any local-only items to cloud so they appear on all devices
-        const unsyncedMedia = localMedia.filter(
-          (lm) => !cloudMedia.some((cm) => cm.id === lm.id)
-        );
-        if (unsyncedMedia.length > 0) {
-          saveMediaToCloud(unsyncedMedia).catch(() => {});
-        }
-      } catch (err) {
-        console.error('Failed to load uploads from DB:', err);
-      } finally {
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Failed to sync data with cloud:', err);
+    } finally {
+      if (isInitial) {
         setIsLoading(false);
       }
     }
-
-    loadStoredUploads();
   }, []);
+
+  useEffect(() => {
+    // Initial fetch
+    syncData(true);
+
+    // Auto-sync polling every 8 seconds so other users' uploads & deletes reflect live
+    const interval = setInterval(() => {
+      syncData(false);
+    }, 8000);
+
+    // Re-sync immediately when returning to tab
+    const handleFocus = () => {
+      syncData(false);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [syncData]);
 
   // Auth / Lock state
   const [isLocked, setIsLocked] = useState(false);

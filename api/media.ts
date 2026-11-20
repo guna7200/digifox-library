@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
+import { del } from '@vercel/blob';
 
 const DEFAULT_URL =
   'postgresql://neondb_owner:npg_tiGx2FhNW4Yz@ep-flat-boat-beqzbeyy-pooler.c-9.us-east-2.aws.neon.tech/neondb?sslmode=require';
@@ -125,6 +126,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       for (const id of ids) {
+        try {
+          const rows = await sql`SELECT url, thumbnail FROM media_items WHERE id = ${id}`;
+          if (rows && rows.length > 0) {
+            const urlsToDelete: string[] = [];
+            const r = rows[0];
+            if (r.url && r.url.includes('vercel-storage.com')) urlsToDelete.push(r.url);
+            if (r.thumbnail && r.thumbnail.includes('vercel-storage.com')) urlsToDelete.push(r.thumbnail);
+            if (urlsToDelete.length > 0) {
+              await del(urlsToDelete, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.warn('Could not remove blob from storage for id:', id, e);
+        }
         await sql`DELETE FROM media_items WHERE id = ${id}`;
       }
 

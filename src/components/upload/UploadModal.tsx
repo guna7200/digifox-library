@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { upload } from '@vercel/blob/client';
 import {
   X,
   UploadCloud,
@@ -391,7 +392,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     setStagedFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
-  // Final Ingest execution
+  // Final Ingest execution with direct Vercel Blob cloud upload
   const handleUploadExecution = async () => {
     if (stagedFiles.length === 0 || isUploadingRef.current) return;
 
@@ -399,55 +400,100 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     setIsUploading(true);
     setUploadProgress(0);
 
-    for (let i = 1; i <= 10; i++) {
-      setUploadProgress(i * 10);
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    const newMediaItems: MediaItem[] = [];
+    const totalFiles = stagedFiles.length;
+
+    try {
+      for (let i = 0; i < stagedFiles.length; i++) {
+        const staged = stagedFiles[i];
+        setStatusMessage(`Uploading ${staged.title} to Cloud Storage (${i + 1}/${totalFiles})...`);
+
+        // Sanitize file name
+        const cleanFileName = `${Date.now()}-${staged.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+        // 1. Upload main file directly to Vercel Blob
+        let fileUrl = staged.streamUrl;
+        try {
+          const blobResult = await upload(cleanFileName, staged.file, {
+            access: 'public',
+            handleUploadUrl: '/api/blob-upload',
+          });
+          fileUrl = blobResult.url;
+        } catch (uploadErr) {
+          console.error('Vercel Blob upload failed for file:', staged.file.name, uploadErr);
+        }
+
+        // 2. Upload thumbnail if generated (for video/drone or raw)
+        let thumbnailUrl = fileUrl;
+        if (
+          (staged.type === 'video' || staged.type === 'drone') &&
+          staged.previewUrl &&
+          staged.previewUrl.startsWith('data:')
+        ) {
+          try {
+            const thumbRes = await fetch(staged.previewUrl);
+            const thumbBlob = await thumbRes.blob();
+            const thumbResult = await upload(`thumb-${Date.now()}-${staged.id}.jpg`, thumbBlob, {
+              access: 'public',
+              handleUploadUrl: '/api/blob-upload',
+            });
+            thumbnailUrl = thumbResult.url;
+          } catch (thumbErr) {
+            console.warn('Thumbnail blob upload fallback:', thumbErr);
+            thumbnailUrl = fileUrl;
+          }
+        }
+
+        const ext = staged.file.name.split('.').pop()?.toUpperCase() || 'JPEG';
+        const isDrone = staged.type === 'drone';
+
+        newMediaItems.push({
+          id: staged.id,
+          title: staged.title,
+          type: staged.type,
+          url: fileUrl,
+          thumbnail: thumbnailUrl,
+          aspectRatio: staged.width / (staged.height || 1),
+          width: staged.width,
+          height: staged.height,
+          fileSize: staged.fileSize,
+          fileSizeBytes: staged.fileSizeBytes,
+          dateAdded: new Date().toISOString(),
+          dateTaken: new Date(staged.file.lastModified).toISOString().replace('T', ' ').substring(0, 16),
+          isFavorite: false,
+          rating: 5,
+          tags: isDrone
+            ? ['Drone Video', 'INSV', '360°', 'Aerial Footage']
+            : ['My Upload', staged.type.toUpperCase(), ext],
+          albumId: selectedAlbum || undefined,
+          videoDuration: staged.videoDuration,
+          isCustomUpload: true,
+          exif: {
+            camera: isDrone ? 'Insta360 Drone Cam (INSV)' : 'Local Device',
+            lens: isDrone ? 'Dual 360° Aerial Fisheye' : 'Standard Optics',
+            iso: 100,
+            shutter: '1/500s',
+            aperture: 'f/2.8',
+            focalLength: isDrone ? '7.2mm' : '35mm',
+            location: 'DigiFox Library Vault',
+            colorSpace: 'sRGB / Rec.709',
+            bitDepth: isDrone ? '10-bit INSV Stream' : staged.type === 'video' ? '10-bit Video' : '8-bit RGB',
+          },
+        });
+
+        setUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
+      }
+
+      onUploadComplete(newMediaItems);
+      setStagedFiles([]);
+      onClose();
+    } catch (err: any) {
+      console.error('Upload process error:', err);
+      setStatusMessage(`Upload failed: ${err.message || 'Error occurred'}`);
+    } finally {
+      setIsUploading(false);
+      isUploadingRef.current = false;
     }
-
-    const newMediaItems: MediaItem[] = stagedFiles.map((staged) => {
-      const ext = staged.file.name.split('.').pop()?.toUpperCase() || 'JPEG';
-      const isDrone = staged.type === 'drone';
-
-      return {
-        id: staged.id,
-        title: staged.title,
-        type: staged.type,
-        url: staged.streamUrl,
-        thumbnail: staged.previewUrl,
-        aspectRatio: staged.width / (staged.height || 1),
-        width: staged.width,
-        height: staged.height,
-        fileSize: staged.fileSize,
-        fileSizeBytes: staged.fileSizeBytes,
-        dateAdded: new Date().toISOString(),
-        dateTaken: new Date(staged.file.lastModified).toISOString().replace('T', ' ').substring(0, 16),
-        isFavorite: false,
-        rating: 5,
-        tags: isDrone
-          ? ['Drone Video', 'INSV', '360°', 'Aerial Footage']
-          : ['My Upload', staged.type.toUpperCase(), ext],
-        albumId: selectedAlbum || undefined,
-        videoDuration: staged.videoDuration,
-        isCustomUpload: true,
-        exif: {
-          camera: isDrone ? 'Insta360 Drone Cam (INSV)' : 'Local Device',
-          lens: isDrone ? 'Dual 360° Aerial Fisheye' : 'Standard Optics',
-          iso: 100,
-          shutter: '1/500s',
-          aperture: 'f/2.8',
-          focalLength: isDrone ? '7.2mm' : '35mm',
-          location: 'DigiFox Library Vault',
-          colorSpace: 'sRGB / Rec.709',
-          bitDepth: isDrone ? '10-bit INSV Stream' : staged.type === 'video' ? '10-bit Video' : '8-bit RGB',
-        },
-      };
-    });
-
-    onUploadComplete(newMediaItems);
-    setIsUploading(false);
-    isUploadingRef.current = false;
-    setStagedFiles([]);
-    onClose();
   };
 
   return (
