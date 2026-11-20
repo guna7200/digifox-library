@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
 import { del } from '@vercel/blob';
+import decode from 'heic-decode';
+import jpeg from 'jpeg-js';
 
 const DEFAULT_URL =
   'postgresql://neondb_owner:npg_tiGx2FhNW4Yz@ep-flat-boat-beqzbeyy-pooler.c-9.us-east-2.aws.neon.tech/neondb?sslmode=require';
@@ -59,6 +61,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       for (const item of items) {
         if (!item || !item.id) continue;
+
+        // Auto-convert any HEIC base64 image data to genuine JPEG
+        if (item.url && (item.url.includes('AAAANGZ0eXBoZWlj') || item.url.includes('ftypheic'))) {
+          try {
+            const raw = item.url.includes(',') ? item.url.split(',')[1] : item.url;
+            const buf = Buffer.from(raw, 'base64');
+            const decoded = await decode({ buffer: buf });
+            const jpegData = jpeg.encode({ data: decoded.data, width: decoded.width, height: decoded.height }, 85);
+            const jpegUrl = `data:image/jpeg;base64,${jpegData.data.toString('base64')}`;
+            item.url = jpegUrl;
+            item.thumbnail = jpegUrl;
+            item.width = decoded.width;
+            item.height = decoded.height;
+            item.aspectRatio = decoded.width / (decoded.height || 1);
+          } catch (err) {
+            console.error('Backend HEIC auto-convert failed:', err);
+          }
+        }
 
         await sql`
           INSERT INTO media_items (
